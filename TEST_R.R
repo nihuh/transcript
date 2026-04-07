@@ -1,7 +1,6 @@
 ## =========================================================
-##  Pipeline DESeq2 — TEST (NatureStyle + Anotação GTF)
+##  Pipeline DESeq2 — TEST (Anotação GTF)
 ##  Autor: Walter + ChatGPT
-##  Data:  Sys.time()
 ##  Saída principal de figuras: SVG + PDF
 ## =========================================================
 
@@ -192,7 +191,7 @@ plot_pca_contraste <- function(ct, data, coldata, outdir, degs_ct = NULL) {
   ggsave(file.path(outdir, paste0("PCA_", ct, "_vs_CN.pdf")),
          p, width = 7, height = 6)
   
-  message("      ✅ PCA salvo: ", ct, " vs CN")
+  message("PCA salvo: ", ct, " vs CN")
 }
 
 ## 1.8 Ler GTF e montar tabela (transcript_id -> gene_id, gene_name, biotype)
@@ -398,7 +397,7 @@ if (has_xlsx) {
   
   xlsx_file <- file.path(out_root, "DESeq2_TEST_Complete.xlsx")
   openxlsx::saveWorkbook(wb, xlsx_file, overwrite = TRUE)
-  message("✅ Excel salvo em: ", xlsx_file)
+  message("Excel salvo em: ", xlsx_file)
 }
 
 ## =========================================================
@@ -592,7 +591,7 @@ make_deg_heatmap <- function(ct, dds, vsd, coldata,
   )
   dev.off()
   
-  message("   ✅ Heatmap salvo: ", out_svg)
+  message(" Heatmap salvo: ", out_svg)
 }
 
 message(">> Heatmaps por contraste (CN vs ct) ...")
@@ -632,7 +631,7 @@ try({
 ## =========================================================
 capture.output(sessionInfo(),
                file = file.path(dir_logs, "R_sessionInfo_TEST.txt"))
-message("\n✅ Pipeline TEST concluído!")
+message("\n Pipeline TEST concluído!")
 message("Saídas em: ", out_root)
 
 sink(type = "message"); close(zz)
