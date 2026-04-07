@@ -1,7 +1,7 @@
 ## =========================================================
-##  Immune analysis — TESTÍCULO (projeto limpo)
+##  Immune analysis — TESTÍCULO 
 ##  Autor: Walter + ChatGPT
-##  Saídas: SVG (vetorial) + PDF (backup)
+##  Saídas: SVG + PDF
 ## =========================================================
 
 suppressPackageStartupMessages({
