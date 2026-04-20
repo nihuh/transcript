@@ -1,0 +1,17 @@
+echo -e "Sample\tMapped_reads\tMapping_rate\tProperly_paired_rate" > mapping_summary.tsv
+
+for d in */03_hisat2_mapped; do
+  bam=$(find "$d" -maxdepth 1 -name "*_mapped_SORTED.bam" | head -n 1)
+  if [ -n "$bam" ]; then
+    sample=$(basename "$bam" _mapped_SORTED.bam)
+
+    mapped_line=$(/opt/homebrew/bin/samtools flagstat "$bam" | grep " mapped (" | head -n 1)
+    proper_line=$(/opt/homebrew/bin/samtools flagstat "$bam" | grep "properly paired" | head -n 1)
+
+    mapped_reads=$(echo "$mapped_line" | awk '{print $1}')
+    mapping_rate=$(echo "$mapped_line" | sed -E 's/.*\(([0-9.]+)%.*/\1/')
+    properly_paired_rate=$(echo "$proper_line" | sed -E 's/.*\(([0-9.]+)%.*/\1/')
+
+    echo -e "${sample}\t${mapped_reads}\t${mapping_rate}\t${properly_paired_rate}" >> mapping_summary.tsv
+  fi
+done
