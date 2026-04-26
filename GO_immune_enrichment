@@ -1,0 +1,249 @@
+## =========================================================
+##  GO immune enrichment — #tecido alvo#
+##  Saídas:
+##   - GO BP completo
+##   - GO BP termos imunes
+##   - genes imunes
+##   - dotplot GO geral
+##   - dotplot GO imune
+## =========================================================
+
+suppressPackageStartupMessages({
+  library(readr)
+  library(dplyr)
+  library(ggplot2)
+  library(clusterProfiler)
+  library(enrichplot)
+  library(org.Mm.eg.db)
+})
+
+## ----------------------------
+## Caminhos
+## ----------------------------
+out_root    <- "/output"
+
+dir_tabs    <- "/tabelas_DEGs_significantes"
+
+matriz_file <- "trinity_matrix/matriz_kallisto.isoform.counts.matrix"
+
+mk <- function(...) {
+  d <- file.path(...)
+  dir.create(d, showWarnings = FALSE, recursive = TRUE)
+  d
+}
+
+dir_immune <- mk(out_root, "immune_analysis")
+dir_enrich <- mk(dir_immune, "enrichment")
+dir_enrich_plots <- mk(dir_enrich, "plots")
+
+conds <- c("03dpi", "05dpi", "10dpi", "17dpi", "20dpi")
+
+gene_ratio_to_numeric <- function(x) {
+  sapply(x, function(z) {
+    parts <- strsplit(z, "/")[[1]]
+    as.numeric(parts[1]) / as.numeric(parts[2])
+  })
+}
+
+## =========================================================
+## 1) Ler DEGs significativos de todos os contrastes
+## =========================================================
+
+all_sig_paths <- file.path(
+  dir_tabs,
+  paste0("DESeq2_", conds, "_vs_CN_GTF_significant.tsv")
+)
+
+names(all_sig_paths) <- conds
+
+sig_all <- lapply(all_sig_paths, function(p) {
+  if (!file.exists(p)) {
+    message("Arquivo não encontrado, pulando: ", p)
+    return(NULL)
+  }
+  readr::read_tsv(p, show_col_types = FALSE)
+})
+
+sig_all <- sig_all[!vapply(sig_all, is.null, logical(1))]
+
+if (length(sig_all) == 0) {
+  stop("Nenhuma tabela significant encontrada em: ", dir_tabs)
+}
+
+all_deg_symbols <- dplyr::bind_rows(sig_all) |>
+  dplyr::filter(!is.na(gene_name)) |>
+  dplyr::pull(gene_name) |>
+  unique()
+
+message("Total gene_name DEGs anotados para enriquecimento: ", length(all_deg_symbols))
+
+## =========================================================
+## 2) Converter SYMBOL -> ENTREZID
+## =========================================================
+
+gene_df <- clusterProfiler::bitr(
+  all_deg_symbols,
+  fromType = "SYMBOL",
+  toType   = "ENTREZID",
+  OrgDb    = org.Mm.eg.db
+)
+
+if (is.null(gene_df) || nrow(gene_df) == 0) {
+  stop("Falha no bitr(): nenhum mapeamento SYMBOL -> ENTREZID retornado.")
+}
+
+## =========================================================
+## 3) Enriquecimento GO BP
+## =========================================================
+
+ego_bp <- clusterProfiler::enrichGO(
+  gene          = unique(gene_df$ENTREZID),
+  OrgDb         = org.Mm.eg.db,
+  keyType       = "ENTREZID",
+  ont           = "BP",
+  pAdjustMethod = "BH",
+  pvalueCutoff  = 0.05,
+  qvalueCutoff  = 0.2,
+  readable      = TRUE
+)
+
+if (is.null(ego_bp) || nrow(ego_bp@result) == 0) {
+  stop("enrichGO não retornou termos.")
+}
+
+go_bp_df <- as.data.frame(ego_bp)
+
+## =========================================================
+## 4) Filtrar termos imunes
+## =========================================================
+
+immune_terms <- ego_bp@result |>
+  dplyr::filter(
+    grepl(
+      "immune|immun|cytokine|interferon|inflamm|antigen|defense|leukocyte|chemokine|antiviral|virus|viral|innate|adaptive",
+      Description,
+      ignore.case = TRUE
+    )
+  )
+
+message("Termos GO BP imunes encontrados: ", nrow(immune_terms))
+
+immune_gene_symbols <- unique(unlist(strsplit(immune_terms$geneID, "/")))
+immune_gene_symbols <- immune_gene_symbols[immune_gene_symbols != ""]
+
+message("Genes presentes nesses termos imunes: ", length(immune_gene_symbols))
+
+## =========================================================
+## 5) Exportar tabelas
+## =========================================================
+
+readr::write_tsv(
+  go_bp_df,
+  file.path(dir_enrich, "GO_BP_enrichment_all_DEGs_OVÁRIO.tsv")
+)
+
+readr::write_tsv(
+  immune_terms,
+  file.path(dir_enrich, "GO_BP_immune_terms_OVÁRIO.tsv")
+)
+
+writeLines(
+  immune_gene_symbols,
+  file.path(dir_enrich, "immune_gene_symbols_OVÁRIO.txt")
+)
+
+message("Arquivos exportados em: ", dir_enrich)
+
+## =========================================================
+## 6) Dotplot GO BP completo
+## =========================================================
+
+p_dot_all <- enrichplot::dotplot(
+  ego_bp,
+  showCategory = 20
+) +
+  ggplot2::ggtitle("GO Biological Process enrichment - Ovarium") +
+  ggplot2::theme_minimal(base_size = 12) +
+  ggplot2::theme(
+    plot.title = ggplot2::element_text(face = "bold", hjust = 0.5),
+    axis.text.y = ggplot2::element_text(size = 10)
+  )
+
+ggplot2::ggsave(
+  file.path(dir_enrich_plots, "Dotplot_GO_BP_all_DEGs_OVÁRIO.svg"),
+  p_dot_all,
+  width = 10,
+  height = 7,
+  device = "svg"
+)
+
+ggplot2::ggsave(
+  file.path(dir_enrich_plots, "Dotplot_GO_BP_all_DEGs_OVÁRIO.pdf"),
+  p_dot_all,
+  width = 10,
+  height = 7
+)
+
+## =========================================================
+## 7) Dotplot manual dos termos imunes
+## =========================================================
+
+if (nrow(immune_terms) > 0) {
+  
+  immune_terms_plot <- immune_terms |>
+    dplyr::arrange(p.adjust) |>
+    dplyr::slice_head(n = 20) |>
+    dplyr::mutate(
+      GeneRatio_num = gene_ratio_to_numeric(GeneRatio),
+      Description = factor(Description, levels = rev(Description))
+    )
+  
+  p_immune <- ggplot2::ggplot(
+    immune_terms_plot,
+    ggplot2::aes(
+      x = GeneRatio_num,
+      y = Description,
+      size = Count,
+      color = p.adjust
+    )
+  ) +
+    ggplot2::geom_point(alpha = 0.85) +
+    ggplot2::scale_color_gradient(
+      low = "#B2182B",
+      high = "#2166AC",
+      name = "Adjusted p-value"
+    ) +
+    ggplot2::theme_minimal(base_size = 12) +
+    ggplot2::theme(
+      plot.title = ggplot2::element_text(face = "bold", hjust = 0.5),
+      axis.text.y = ggplot2::element_text(size = 10)
+    ) +
+    ggplot2::labs(
+      title = "Immune-related GO Biological Processes - Ovarium",
+      x = "Gene ratio",
+      y = NULL,
+      size = "Gene count"
+    )
+  
+  ggplot2::ggsave(
+    file.path(dir_enrich_plots, "Dotplot_GO_BP_immune_terms_OVARIO.svg"),
+    p_immune,
+    width = 10,
+    height = 7,
+    device = "svg"
+  )
+  
+  ggplot2::ggsave(
+    file.path(dir_enrich_plots, "Dotplot_GO_BP_immune_terms_OVARIO.pdf"),
+    p_immune,
+    width = 10,
+    height = 7
+  )
+  
+} else {
+  message("Nenhum termo imune encontrado para gerar dotplot específico.")
+}
+
+message("\n✅ GO immune enrichment  Ovário finalizado!")
+message("Saídas em: ", dir_enrich)
+message("Plots em: ", dir_enrich_plots)
